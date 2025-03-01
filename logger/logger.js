@@ -1,15 +1,15 @@
-import fs from "node:fs";
+import { Writable } from "node:stream";
 import path from "node:path";
-import { EventEmitter } from "node:events";
-import levels from "./levels.js";
-import formatMessage from "./formatter.js";
+import fs from "node:fs";
+//
+import LogTransformer from "./logTransformer.js";
+import logEmitter from "./logEmitter.js";
 
-class Logger extends EventEmitter {
+class Logger {
     constructor(logPath = "logs/app.log") {
-        super();
         this.logPath = logPath;
-
         this._ensureLogDirectory();
+        this._setupStreams();
         this._setupEventListeners();
     }
 
@@ -20,42 +20,45 @@ class Logger extends EventEmitter {
         }
     }
 
-    _setupEventListeners() {
-        this.on("log", async (formattedMsg) => {
-            try {
-                await fs.promises.appendFile(this.logPath, `${formattedMsg}\n`);
-            } catch (err) {
-                console.error("Logger Error: Unable to write to log file:", err.message);
+    _setupStreams() {
+        this.logStream = fs.createWriteStream(this.logPath, { flags: "a" });
+        this.transformer = new LogTransformer();
+
+        this.consoleStream = new Writable({
+            write: (chunk, encoding, callback) => {
+                process.stdout.write(chunk);
+                callback();
             }
+        });
+
+        this.transformer.pipe(this.consoleStream);
+        this.transformer.pipe(this.logStream);
+    }
+
+    _setupEventListeners() {
+        logEmitter.on("log", (log) => {
+            this.transformer.write(log);
         });
     }
 
+    _log(type, message) {
+        logEmitter.emit("log", { message, type });
+    }
+
+    info(message) {
+        this._log("info", message);
+    }
+
+    warning(message) {
+        this._log("warning", message);
+    }
+
     /**
-    * @param {string} level
-    * @param {string | Error} msg
-    */
-    _log(level, msg) {
-        const formattedMsg = msg instanceof Error
-            ? formatMessage(level, `${msg.toString()}\nStack: ${msg.stack}`)
-            : formatMessage(level, msg);
-
-        if (process.env.APP_ENV === "local") {
-            console.log(formattedMsg);
-        } else {
-            this.emit("log", formattedMsg);
-        }
-    }
-
-    info(msg) {
-        this._log(levels.INFO, msg);
-    }
-
-    warning(msg) {
-        this._log(levels.WARNING, msg);
-    }
-
+     * @param {string | Error} err
+     */
     error(err) {
-        this._log(levels.ERROR, err);
+        const errorMessage = err instanceof Error ? `${err.message}\nStack: ${err.stack}` : err;
+        this._log("error", errorMessage);
     }
 }
 
