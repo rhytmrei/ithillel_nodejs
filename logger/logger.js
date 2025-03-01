@@ -1,52 +1,61 @@
-import fs from "node:fs"
-import path from "node:path"
-import levels from "./levels.js"
-import formatMessage from "./formatter.js"
+import fs from "node:fs";
+import path from "node:path";
+import { EventEmitter } from "node:events";
+import levels from "./levels.js";
+import formatMessage from "./formatter.js";
 
-class Logger {
+class Logger extends EventEmitter {
+    constructor(logPath = "logs/app.log") {
+        super();
+        this.logPath = logPath;
 
-    constructor(logPath = 'logs/app.log') {
-        this.logPath = logPath
+        this._ensureLogDirectory();
+        this._setupEventListeners();
+    }
 
+    _ensureLogDirectory() {
         const logDir = path.dirname(this.logPath);
         if (!fs.existsSync(logDir)) {
             fs.mkdirSync(logDir, { recursive: true });
         }
     }
 
-    __log(level, msg) {
-        let formattedMsg;
+    _setupEventListeners() {
+        this.on("log", async (formattedMsg) => {
+            try {
+                await fs.promises.appendFile(this.logPath, `${formattedMsg}\n`);
+            } catch (err) {
+                console.error("Logger Error: Unable to write to log file:", err.message);
+            }
+        });
+    }
 
-        if (msg instanceof Error) {
-            formattedMsg = formatMessage(
-                level,
-                `${msg.toString()}\nStack: ${msg.stack}`
-            );
-        } else {
-            formattedMsg = formatMessage(level, msg);
-        }
+    /**
+    * @param {string} level
+    * @param {string | Error} msg
+    */
+    _log(level, msg) {
+        const formattedMsg = msg instanceof Error
+            ? formatMessage(level, `${msg.toString()}\nStack: ${msg.stack}`)
+            : formatMessage(level, msg);
 
         if (process.env.APP_ENV === "local") {
             console.log(formattedMsg);
         } else {
-            fs.appendFile(this.logPath, `${formattedMsg}\n`, (err) => {
-                if (err) {
-                    console.error("Error while trying to write to file:", err.message);
-                }
-            });
+            this.emit("log", formattedMsg);
         }
     }
 
     info(msg) {
-        this.__log(levels.INFO, msg);
+        this._log(levels.INFO, msg);
     }
 
     warning(msg) {
-        this.__log(levels.WARNING, msg);
+        this._log(levels.WARNING, msg);
     }
 
     error(err) {
-        this.__log(levels.ERROR, err);
+        this._log(levels.ERROR, err);
     }
 }
 
