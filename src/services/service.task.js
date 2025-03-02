@@ -1,17 +1,14 @@
 const Task = require("../models/model.task");
+const { createTaskSchema, taskSchema } = require("../validators/taskValidator");
 
 const createTask = async (req, res) => {
     try {
-        const { title } = req.body;
-
-        if (!title) {
-            return res.status(400).send({
-                status: 'error',
-                message: 'Title is required'
-            });
+        const { error } = taskSchema.validate(req.body);
+        if (error) {
+            return res.status(400).json({ status: "error", message: error.details[0].message });
         }
 
-        const newTask = await Task.create({title});
+        const newTask = await Task.create({title: req.body.title});
         res.status(201).json(newTask);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -30,6 +27,12 @@ const getAllTasks = async (req, res) => {
 
 const changeTaskStatus = async (req, res) => {
     try {
+
+        const { error } = taskSchema.validate(req.params);
+        if (error) {
+            return res.status(400).json({ status: "error", message: error.details[0].message });
+        }
+
         const { itemId } = req.params;
         const task = await Task.findById(itemId);
 
@@ -47,6 +50,11 @@ const changeTaskStatus = async (req, res) => {
 
 const deleteTask = async (req, res) => {
     try {
+        const { error } = taskExistsSchema.validate(req.params);
+        if (error) {
+            return res.status(400).json({ status: "error", message: error.details[0].message });
+        }
+
         const { itemId } = req.params;
         const task = await Task.findByIdAndDelete(itemId);
 
